@@ -5,6 +5,7 @@ Deploy to Cloud Run with Google OAuth authentication
 
 import streamlit as st
 from google.oauth2 import id_token
+from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from google.auth.transport import requests
 import os
@@ -13,11 +14,28 @@ from urllib.parse import quote, urlencode
 from google.cloud import secretmanager
 
 def get_client_secrets():
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/YOUR_PROJECT_ID/secrets/oauth-client-secrets/versions/latest"
-    response = client.access_secret_version(request={"name": name})
-    return json.loads(response.payload.data.decode("UTF-8"))
-
+    """Load client secrets from environment variable or Secret Manager"""
+    try:
+        # Method 1: Read directly from environment variable (when using --set-secrets)
+        if 'GOOGLE_CLIENT_SECRETS' in os.environ:
+            secrets_json = os.environ['GOOGLE_CLIENT_SECRETS']
+            return json.loads(secrets_json)
+        
+        # Method 2: Read from Secret Manager directly (fallback)
+        project_id = os.environ.get('GCP_PROJECT', 'avisia-training')
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project_id}/secrets/oauth-client-secrets/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        return json.loads(response.payload.data.decode("UTF-8"))
+        
+    except Exception as e:
+        # In local development, read from file
+        if os.path.exists('client_secrets.json'):
+            with open('client_secrets.json', 'r') as f:
+                return json.load(f)
+        else:
+            st.error(f"⚠️ Could not load client secrets: {str(e)}")
+            return None
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -36,15 +54,22 @@ REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8501')
 
 def initialize_google_oauth():
     """Initialize Google OAuth flow"""
-    if not os.path.exists(CLIENT_SECRETS_FILE):
-        st.error("⚠️ Missing client_secrets.json file. Please add it to your project.")
+    # Load client secrets from environment or Secret Manager
+    client_config = get_client_secrets()
+    
+    if client_config is None:
+        st.error("⚠️ Missing OAuth configuration. Please configure client secrets.")
         st.stop()
     
-    flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
+    # Create OAuth flow from config dict (not from file)
+    from google_auth_oauthlib.flow import Flow
+    
+    flow = Flow.from_client_config(
+        client_config,
         scopes=SCOPES,
         redirect_uri=REDIRECT_URI
     )
+    
     return flow
 
 def check_authentication():
