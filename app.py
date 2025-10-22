@@ -10,6 +10,13 @@ from google.auth.transport import requests
 import os
 import json
 from urllib.parse import quote, urlencode
+from google.cloud import secretmanager
+
+def get_client_secrets():
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/YOUR_PROJECT_ID/secrets/oauth-client-secrets/versions/latest"
+    response = client.access_secret_version(request={"name": name})
+    return json.loads(response.payload.data.decode("UTF-8"))
 
 # ============================================================================
 # CONFIGURATION
