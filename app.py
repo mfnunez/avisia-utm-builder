@@ -36,6 +36,42 @@ def get_client_secrets():
         else:
             st.error(f"⚠️ Could not load client secrets: {str(e)}")
             return None
+
+# ============================================================================
+# LOGO FUNCTION (Defined early so both pages can use it)
+# ============================================================================
+
+def display_logo():
+    """Display Avisia logo centered on the page with blue background"""
+    import base64
+    
+    # Try to read and encode the image
+    try:
+        with open("avisia.png", "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode()
+        
+        st.markdown(f"""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        padding: 2rem; 
+                        border-radius: 10px; 
+                        text-align: center;
+                        margin-bottom: 2rem;">
+                <img src="data:image/png;base64,{encoded_image}" style="width: 300px; max-width: 100%;">
+            </div>
+            """, unsafe_allow_html=True)
+    except FileNotFoundError:
+        # Fallback if image not found
+        st.markdown("""
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        padding: 2rem; 
+                        border-radius: 10px; 
+                        text-align: center;
+                        margin-bottom: 2rem;">
+                <h2 style="color: white; margin: 0;">AVISIA</h2>
+            </div>
+            """, unsafe_allow_html=True)
+
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -84,6 +120,9 @@ def check_authentication():
 
 def login_page():
     """Display login page"""
+    # ✅ LOGO CALL #1 - Display logo on login page
+    display_logo()
+    
     st.title("🔐 Avisia UTM Builder")
     st.subheader("Connexion requise")
     
@@ -221,6 +260,9 @@ def main_app():
     </style>
     """, unsafe_allow_html=True)
     
+    # ✅ LOGO CALL #2 - Display logo on main app page
+    display_logo()
+    
     # Header with user info
     col1, col2 = st.columns([3, 1])
     
@@ -236,21 +278,21 @@ def main_app():
         if st.session_state.user_info:
             st.markdown(f"""
             <div class="user-info">
-                <img src="{st.session_state.user_info.get('picture', '')}" 
-                     width="40" style="border-radius: 50%;">
-                <p style="margin: 5px 0 0 0; font-size: 12px;">
-                    {st.session_state.user_info.get('name', 'User')}<br>
-                    {st.session_state.user_info.get('email', '')}
-                </p>
+                <img src="{st.session_state.user_info['picture']}" 
+                     style="width: 50px; border-radius: 50%; margin-bottom: 0.5rem;">
+                <div style="font-size: 0.9rem;">
+                    <strong>{st.session_state.user_info['name']}</strong><br>
+                    {st.session_state.user_info['email']}
+                </div>
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button("🚪 Déconnexion"):
+            if st.button("🚪 Se déconnecter", use_container_width=True):
                 st.session_state.authenticated = False
                 st.session_state.user_info = None
                 st.rerun()
     
-    # Initialize session state for form
+    # Initialize session state for form fields
     if 'base_url' not in st.session_state:
         st.session_state.base_url = 'https://avisia.fr/'
     if 'source' not in st.session_state:
@@ -264,11 +306,11 @@ def main_app():
     if 'term' not in st.session_state:
         st.session_state.term = ''
     
-    # Layout
-    col_form, col_result = st.columns([2, 1])
+    # Main form
+    col_form, col_result = st.columns([1, 1])
     
     with col_form:
-        st.subheader("📝 Configuration UTM")
+        st.subheader("📝 Paramètres UTM")
         
         # Base URL
         base_url = st.text_input(
