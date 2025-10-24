@@ -1,6 +1,6 @@
 """
 Avisia UTM Builder - Streamlit Web App
-Deploy to Cloud Run with Google OAuth authentication
+Deploy to Cloud Run with Google OAuth authentication and BigQuery tracking
 """
 
 import streamlit as st
@@ -12,6 +12,140 @@ import os
 import json
 from urllib.parse import quote, urlencode
 from google.cloud import secretmanager
+from google.cloud import bigquery
+from datetime import datetime
+import pandas as pd
+
+# ============================================================================
+# BIGQUERY CONFIGURATION
+# ============================================================================
+
+# BigQuery configuration
+BQ_PROJECT_ID = os.getenv('GCP_PROJECT', 'avisia-training')
+BQ_DATASET_ID = 'utm_tracking'
+BQ_TABLE_ID = 'utm_campaigns'
+
+def get_bigquery_client():
+    """Initialize BigQuery client"""
+    try:
+        return bigquery.Client(project=BQ_PROJECT_ID)
+    except Exception as e:
+        st.error(f"❌ Erreur de connexion à BigQuery: {str(e)}")
+        return None
+
+def save_utm_to_bigquery(base_url, source, medium, campaign, content, term, final_url, user_email):
+    """Save UTM campaign data to BigQuery"""
+    try:
+        client = get_bigquery_client()
+        if not client:
+            return False
+        
+        table_id = f"{BQ_PROJECT_ID}.{BQ_DATASET_ID}.{BQ_TABLE_ID}"
+        
+        rows_to_insert = [{
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_email": user_email,
+            "initial_url": base_url,
+            "utm_source": source.lower().strip().replace(' ', '-'),
+            "utm_medium": medium.lower().strip().replace(' ', '-'),
+            "utm_campaign": campaign.lower().strip().replace(' ', '-'),
+            "utm_content": content.lower().strip().replace(' ', '-') if content else None,
+            "utm_term": term.lower().strip().replace(' ', '-') if term else None,
+            "final_url": final_url
+        }]
+        
+        errors = client.insert_rows_json(table_id, rows_to_insert)
+        
+        if errors:
+            st.error(f"❌ Erreur lors de l'enregistrement: {errors}")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ Erreur BigQuery: {str(e)}")
+        return False
+
+def get_utm_history(limit=100, source_filter=None, medium_filter=None, campaign_filter=None):
+    """Retrieve UTM campaign history from BigQuery"""
+    try:
+        client = get_bigquery_client()
+        if not client:
+            return None
+        
+        table_id = f"{BQ_PROJECT_ID}.{BQ_DATASET_ID}.{BQ_TABLE_ID}"
+        
+        # Build query with filters
+        query = f"""
+        SELECT 
+            timestamp,
+            user_email,
+            initial_url,
+            utm_source,
+            utm_medium,
+            utm_campaign,
+            utm_content,
+            utm_term,
+            final_url
+        FROM `{table_id}`
+        WHERE 1=1
+        """
+        
+        if source_filter:
+            query += f" AND utm_source = '{source_filter}'"
+        if medium_filter:
+            query += f" AND utm_medium = '{medium_filter}'"
+        if campaign_filter:
+            query += f" AND LOWER(utm_campaign) LIKE LOWER('%{campaign_filter}%')"
+        
+        query += f"""
+        ORDER BY timestamp DESC
+        LIMIT {limit}
+        """
+        
+        query_job = client.query(query)
+        results = query_job.result()
+        
+        # Convert to pandas DataFrame
+        df = results.to_dataframe()
+        
+        if not df.empty:
+            # Format timestamp
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la récupération de l'historique: {str(e)}")
+        return None
+
+def get_unique_values(column_name):
+    """Get unique values for a column (for filters)"""
+    try:
+        client = get_bigquery_client()
+        if not client:
+            return []
+        
+        table_id = f"{BQ_PROJECT_ID}.{BQ_DATASET_ID}.{BQ_TABLE_ID}"
+        
+        query = f"""
+        SELECT DISTINCT {column_name}
+        FROM `{table_id}`
+        WHERE {column_name} IS NOT NULL
+        ORDER BY {column_name}
+        """
+        
+        query_job = client.query(query)
+        results = query_job.result()
+        
+        return [row[0] for row in results]
+        
+    except Exception as e:
+        return []
+
+# ============================================================================
+# EXISTING FUNCTIONS (OAuth, etc.)
+# ============================================================================
 
 def get_client_secrets():
     """Load client secrets from environment variable or Secret Manager"""
@@ -218,18 +352,159 @@ def generate_utm_url(base_url, source, medium, campaign, content='', term=''):
     return base_url
 
 # ============================================================================
-# MAIN APPLICATION
+# NAVIGATION
 # ============================================================================
 
-def main_app():
-    """Main UTM Builder application"""
+def display_navigation():
+    """Display navigation menu"""
+    st.sidebar.title("📱 Navigation")
     
-    # Page config
-    st.set_page_config(
-        page_title="Avisia UTM Builder",
-        page_icon="🔗",
-        layout="wide"
-    )
+    pages = {
+        "🔗 Générateur UTM": "generator",
+        "📊 Historique": "history"
+    }
+    
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "generator"
+    
+    for label, page_id in pages.items():
+        if st.sidebar.button(label, use_container_width=True, key=f"nav_{page_id}"):
+            st.session_state.current_page = page_id
+            st.rerun()
+    
+    st.sidebar.markdown("---")
+    
+    # User info in sidebar
+    if st.session_state.user_info:
+        st.sidebar.markdown(f"""
+        **👤 Connecté en tant que:**  
+        {st.session_state.user_info['name']}  
+        {st.session_state.user_info['email']}
+        """)
+        
+        if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
+            st.session_state.authenticated = False
+            st.session_state.user_info = None
+            st.rerun()
+
+# ============================================================================
+# HISTORY PAGE
+# ============================================================================
+
+def history_page():
+    """Display history page with UTM campaigns"""
+    
+    st.title("📊 Historique des campagnes UTM")
+    
+    st.markdown("""
+    Retrouvez ici l'historique des URLs générées avec leurs paramètres UTM.
+    """)
+    
+    # Filters
+    st.subheader("🔍 Filtres")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        sources = get_unique_values('utm_source')
+        source_filter = st.selectbox(
+            "Source",
+            options=['Toutes'] + sources,
+            key='history_source_filter'
+        )
+    
+    with col2:
+        mediums = get_unique_values('utm_medium')
+        medium_filter = st.selectbox(
+            "Medium",
+            options=['Tous'] + mediums,
+            key='history_medium_filter'
+        )
+    
+    with col3:
+        campaign_filter = st.text_input(
+            "Campagne (recherche)",
+            placeholder="Ex: blog, newsletter...",
+            key='history_campaign_filter'
+        )
+    
+    # Apply filters
+    source = None if source_filter == 'Toutes' else source_filter
+    medium = None if medium_filter == 'Tous' else medium_filter
+    campaign = None if not campaign_filter else campaign_filter
+    
+    # Fetch data
+    with st.spinner("Chargement de l'historique..."):
+        df = get_utm_history(
+            limit=100,
+            source_filter=source,
+            medium_filter=medium,
+            campaign_filter=campaign
+        )
+    
+    if df is not None and not df.empty:
+        st.subheader(f"📋 Dernières campagnes ({len(df)} résultats)")
+        
+        # Display metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total", len(df))
+        
+        with col2:
+            st.metric("Sources", df['utm_source'].nunique())
+        
+        with col3:
+            st.metric("Mediums", df['utm_medium'].nunique())
+        
+        with col4:
+            st.metric("Campagnes", df['utm_campaign'].nunique())
+        
+        # Display table
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "timestamp": st.column_config.DatetimeColumn(
+                    "Date",
+                    format="DD/MM/YYYY HH:mm"
+                ),
+                "user_email": "Utilisateur",
+                "initial_url": "URL initiale",
+                "utm_source": "Source",
+                "utm_medium": "Medium",
+                "utm_campaign": "Campagne",
+                "utm_content": "Contenu",
+                "utm_term": "Terme",
+                "final_url": st.column_config.LinkColumn(
+                    "URL finale",
+                    display_text="🔗 Lien"
+                )
+            }
+        )
+        
+        # Download button
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Télécharger en CSV",
+            data=csv,
+            file_name=f"utm_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        
+    elif df is not None:
+        st.info("ℹ️ Aucune campagne trouvée avec ces filtres.")
+    else:
+        st.error("❌ Impossible de charger l'historique.")
+
+# ============================================================================
+# GENERATOR PAGE (MAIN APP)
+# ============================================================================
+
+def generator_page():
+    """Main UTM Builder application"""
     
     # Custom CSS
     st.markdown("""
@@ -260,37 +535,13 @@ def main_app():
     </style>
     """, unsafe_allow_html=True)
     
-    # ✅ LOGO CALL #2 - Display logo on main app page
-    display_logo()
-    
-    # Header with user info
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        st.markdown("""
-        <div class="main-header">
-            <h1>🔗 Avisia UTM Builder</h1>
-            <p>Générez des URLs trackées pour vos campagnes marketing</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        if st.session_state.user_info:
-            st.markdown(f"""
-            <div class="user-info">
-                <img src="{st.session_state.user_info['picture']}" 
-                     style="width: 50px; border-radius: 50%; margin-bottom: 0.5rem;">
-                <div style="font-size: 0.9rem;">
-                    <strong>{st.session_state.user_info['name']}</strong><br>
-                    {st.session_state.user_info['email']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if st.button("🚪 Se déconnecter", use_container_width=True):
-                st.session_state.authenticated = False
-                st.session_state.user_info = None
-                st.rerun()
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>🔗 Avisia UTM Builder</h1>
+        <p>Générez des URLs trackées pour vos campagnes marketing</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Initialize session state for form fields
     if 'base_url' not in st.session_state:
@@ -429,21 +680,38 @@ def main_app():
             # Display URL
             st.code(final_url, language=None)
             
-            # Copy button (using st.button with javascript)
-            st.markdown(f"""
-            <textarea id="url-output" style="position: absolute; left: -9999px;">{final_url}</textarea>
-            <script>
-            function copyURL() {{
-                var copyText = document.getElementById("url-output");
-                copyText.select();
-                document.execCommand("copy");
-            }}
-            </script>
-            """, unsafe_allow_html=True)
+            # Copy and Save buttons
+            col_copy, col_save = st.columns(2)
             
-            if st.button("📋 Copier l'URL", use_container_width=True):
-                st.success("✅ URL copiée dans le presse-papier!")
-                st.balloons()
+            with col_copy:
+                # Copy button (using st.button with javascript)
+                st.markdown(f"""
+                <textarea id="url-output" style="position: absolute; left: -9999px;">{final_url}</textarea>
+                <script>
+                function copyURL() {{
+                    var copyText = document.getElementById("url-output");
+                    copyText.select();
+                    document.execCommand("copy");
+                }}
+                </script>
+                """, unsafe_allow_html=True)
+                
+                if st.button("📋 Copier", use_container_width=True):
+                    st.success("✅ URL copiée!")
+            
+            with col_save:
+                if st.button("💾 Sauvegarder", use_container_width=True, type="primary"):
+                    user_email = st.session_state.user_info['email']
+                    success = save_utm_to_bigquery(
+                        base_url, source, medium, campaign, 
+                        content, term, final_url, user_email
+                    )
+                    
+                    if success:
+                        st.success("✅ Sauvegardé dans BigQuery!")
+                        st.balloons()
+                    else:
+                        st.error("❌ Erreur lors de la sauvegarde")
             
             # Normalized values preview
             st.markdown("---")
@@ -530,6 +798,32 @@ def main_app():
         - **Meilleure attribution** des conversions
         - **ROI mesurable** par canal
         """)
+
+# ============================================================================
+# MAIN APPLICATION ROUTER
+# ============================================================================
+
+def main_app():
+    """Main application with navigation"""
+    
+    # Page config
+    st.set_page_config(
+        page_title="Avisia UTM Builder",
+        page_icon="🔗",
+        layout="wide"
+    )
+    
+    # Display logo
+    display_logo()
+    
+    # Display navigation
+    display_navigation()
+    
+    # Route to appropriate page
+    if st.session_state.current_page == "generator":
+        generator_page()
+    elif st.session_state.current_page == "history":
+        history_page()
 
 # ============================================================================
 # APP ENTRY POINT
