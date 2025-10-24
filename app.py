@@ -490,32 +490,28 @@ def history_page():
         if 'selected_rows' not in st.session_state:
             st.session_state.selected_rows = []
         
-        # Display table with selection
+        # Add selection column to dataframe
         st.markdown("---")
         st.markdown("**Sélectionnez les lignes à supprimer :**")
         
-        # Add selection checkboxes
-        selection_col, data_col = st.columns([0.5, 9.5])
-        
-        with selection_col:
-            st.markdown("**✓**")
-            select_all = st.checkbox("Tout", key="select_all")
-        
-        # Create a copy of dataframe with selection column
+        # Create a selection column
         df_display = df.copy()
+        df_display.insert(0, '☑️ Sélection', False)
         
-        # Handle select all
-        if select_all:
-            st.session_state.selected_rows = df_display['final_url'].tolist()
-        elif 'last_select_all' in st.session_state and st.session_state.last_select_all and not select_all:
-            st.session_state.selected_rows = []
+        # Pre-select rows that are already in selected_rows
+        for idx in df_display.index:
+            if df_display.loc[idx, 'final_url'] in st.session_state.selected_rows:
+                df_display.loc[idx, '☑️ Sélection'] = True
         
-        st.session_state.last_select_all = select_all
-        
-        # Display data editor for selection
+        # Display data editor with selection column
         edited_df = st.data_editor(
             df_display,
             column_config={
+                "☑️ Sélection": st.column_config.CheckboxColumn(
+                    "☑️",
+                    help="Cochez pour sélectionner",
+                    default=False,
+                ),
                 "timestamp": st.column_config.DatetimeColumn(
                     "Date",
                     format="DD/MM/YYYY HH:mm"
@@ -539,36 +535,8 @@ def history_page():
             key="data_editor"
         )
         
-        # Selection UI with checkboxes
-        st.markdown("---")
-        st.markdown("**📌 Sélection individuelle :**")
-        
-        # Create columns for checkboxes (4 per row)
-        num_cols = 4
-        rows_per_page = 20  # Show first 20 rows for selection
-        
-        for i in range(0, min(len(df_display), rows_per_page), num_cols):
-            cols = st.columns(num_cols)
-            for j, col in enumerate(cols):
-                if i + j < len(df_display):
-                    row_idx = i + j
-                    row = df_display.iloc[row_idx]
-                    final_url = row['final_url']
-                    
-                    # Create a short label for the checkbox
-                    label = f"#{row_idx + 1} - {row['utm_campaign'][:20]}..."
-                    
-                    with col:
-                        is_selected = st.checkbox(
-                            label,
-                            value=final_url in st.session_state.selected_rows,
-                            key=f"checkbox_{row_idx}"
-                        )
-                        
-                        if is_selected and final_url not in st.session_state.selected_rows:
-                            st.session_state.selected_rows.append(final_url)
-                        elif not is_selected and final_url in st.session_state.selected_rows:
-                            st.session_state.selected_rows.remove(final_url)
+        # Update selected rows based on edited dataframe
+        st.session_state.selected_rows = edited_df[edited_df['☑️ Sélection'] == True]['final_url'].tolist()
         
         # Action buttons
         st.markdown("---")
