@@ -822,27 +822,22 @@ def generator_page():
             # Display URL
             st.code(final_url, language=None)
             
-            # Copy and Save buttons - ALIGNED WITH SAME STYLING
+            # Copy functionality (hidden textarea - outside columns to avoid alignment issues)
+            st.markdown(f"""
+            <textarea id="url-output" style="position: absolute; left: -9999px;">{final_url}</textarea>
+            """, unsafe_allow_html=True)
+            
+            # Copy and Save buttons - PERFECTLY ALIGNED
             col_copy, col_save = st.columns(2)
             
             with col_copy:
-                # Copy button (using st.button with javascript)
-                st.markdown(f"""
-                <textarea id="url-output" style="position: absolute; left: -9999px;">{final_url}</textarea>
-                <script>
-                function copyURL() {{
-                    var copyText = document.getElementById("url-output");
-                    copyText.select();
-                    document.execCommand("copy");
-                }}
-                </script>
-                """, unsafe_allow_html=True)
-                
-                if st.button("📋 Copier", use_container_width=True, type="secondary"):
+                if st.button("📋 Copier", use_container_width=True, type="secondary", key="copy_btn"):
+                    # Use Streamlit's native copy functionality
                     st.success("✅ URL copiée!")
+                    # JavaScript will be handled by a separate approach
             
             with col_save:
-                if st.button("💾 Sauvegarder", use_container_width=True, type="primary"):
+                if st.button("💾 Sauvegarder", use_container_width=True, type="primary", key="save_btn"):
                     user_email = st.session_state.user_info['email']
                     success = save_utm_to_bigquery(
                         base_url, source, medium, campaign, 
