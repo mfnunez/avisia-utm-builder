@@ -66,6 +66,32 @@ def save_utm_to_bigquery(base_url, source, medium, campaign, content, term, fina
         st.error(f"❌ Erreur BigQuery: {str(e)}")
         return False
 
+def delete_utm_from_bigquery(final_urls):
+    """Delete UTM campaigns from BigQuery by final_url"""
+    try:
+        client = get_bigquery_client()
+        if not client:
+            return False
+        
+        table_id = f"{BQ_PROJECT_ID}.{BQ_DATASET_ID}.{BQ_TABLE_ID}"
+        
+        # Create a list of URLs for the SQL IN clause
+        urls_str = "', '".join(final_urls)
+        
+        query = f"""
+        DELETE FROM `{table_id}`
+        WHERE final_url IN ('{urls_str}')
+        """
+        
+        query_job = client.query(query)
+        query_job.result()  # Wait for the query to complete
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la suppression: {str(e)}")
+        return False
+
 def get_utm_history(limit=100, source_filter=None, medium_filter=None, campaign_filter=None):
     """Retrieve UTM campaign history from BigQuery"""
     try:
@@ -388,11 +414,11 @@ def display_navigation():
             st.rerun()
 
 # ============================================================================
-# HISTORY PAGE
+# HISTORY PAGE WITH BULK DELETE
 # ============================================================================
 
 def history_page():
-    """Display history page with UTM campaigns"""
+    """Display history page with UTM campaigns and bulk delete functionality"""
     
     st.title("📊 Historique des campagnes UTM")
     
@@ -460,11 +486,35 @@ def history_page():
         with col4:
             st.metric("Campagnes", df['utm_campaign'].nunique())
         
-        # Display table
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
+        # Initialize selection state
+        if 'selected_rows' not in st.session_state:
+            st.session_state.selected_rows = []
+        
+        # Display table with selection
+        st.markdown("---")
+        st.markdown("**Sélectionnez les lignes à supprimer :**")
+        
+        # Add selection checkboxes
+        selection_col, data_col = st.columns([0.5, 9.5])
+        
+        with selection_col:
+            st.markdown("**✓**")
+            select_all = st.checkbox("Tout", key="select_all")
+        
+        # Create a copy of dataframe with selection column
+        df_display = df.copy()
+        
+        # Handle select all
+        if select_all:
+            st.session_state.selected_rows = df_display['final_url'].tolist()
+        elif 'last_select_all' in st.session_state and st.session_state.last_select_all and not select_all:
+            st.session_state.selected_rows = []
+        
+        st.session_state.last_select_all = select_all
+        
+        # Display data editor for selection
+        edited_df = st.data_editor(
+            df_display,
             column_config={
                 "timestamp": st.column_config.DatetimeColumn(
                     "Date",
@@ -481,18 +531,110 @@ def history_page():
                     "URL finale",
                     display_text="🔗 Lien"
                 )
-            }
+            },
+            hide_index=True,
+            use_container_width=True,
+            disabled=["timestamp", "user_email", "initial_url", "utm_source", "utm_medium", 
+                     "utm_campaign", "utm_content", "utm_term", "final_url"],
+            key="data_editor"
         )
         
-        # Download button
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Télécharger en CSV",
-            data=csv,
-            file_name=f"utm_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
+        # Selection UI with checkboxes
+        st.markdown("---")
+        st.markdown("**📌 Sélection individuelle :**")
+        
+        # Create columns for checkboxes (4 per row)
+        num_cols = 4
+        rows_per_page = 20  # Show first 20 rows for selection
+        
+        for i in range(0, min(len(df_display), rows_per_page), num_cols):
+            cols = st.columns(num_cols)
+            for j, col in enumerate(cols):
+                if i + j < len(df_display):
+                    row_idx = i + j
+                    row = df_display.iloc[row_idx]
+                    final_url = row['final_url']
+                    
+                    # Create a short label for the checkbox
+                    label = f"#{row_idx + 1} - {row['utm_campaign'][:20]}..."
+                    
+                    with col:
+                        is_selected = st.checkbox(
+                            label,
+                            value=final_url in st.session_state.selected_rows,
+                            key=f"checkbox_{row_idx}"
+                        )
+                        
+                        if is_selected and final_url not in st.session_state.selected_rows:
+                            st.session_state.selected_rows.append(final_url)
+                        elif not is_selected and final_url in st.session_state.selected_rows:
+                            st.session_state.selected_rows.remove(final_url)
+        
+        # Action buttons
+        st.markdown("---")
+        col_download, col_delete, col_cancel = st.columns([2, 2, 2])
+        
+        with col_download:
+            # Download button
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Télécharger en CSV",
+                data=csv,
+                file_name=f"utm_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        with col_delete:
+            # Delete button
+            num_selected = len(st.session_state.selected_rows)
+            delete_label = f"🗑️ Supprimer ({num_selected})" if num_selected > 0 else "🗑️ Supprimer"
+            
+            if st.button(
+                delete_label,
+                use_container_width=True,
+                type="primary",
+                disabled=(num_selected == 0),
+                key="delete_button"
+            ):
+                st.session_state.show_delete_confirmation = True
+        
+        with col_cancel:
+            if st.button("❌ Désélectionner tout", use_container_width=True):
+                st.session_state.selected_rows = []
+                st.rerun()
+        
+        # Show selected count
+        if num_selected > 0:
+            st.info(f"ℹ️ **{num_selected} ligne(s) sélectionnée(s)**")
+        
+        # Delete confirmation dialog
+        if st.session_state.get('show_delete_confirmation', False):
+            st.markdown("---")
+            st.warning(f"⚠️ **Vous êtes sûr de vouloir supprimer ces {num_selected} lien(s) ?**")
+            st.markdown("Cette action est irréversible.")
+            
+            col_confirm, col_cancel_confirm = st.columns(2)
+            
+            with col_confirm:
+                if st.button("✅ Oui, supprimer", use_container_width=True, type="primary", key="confirm_delete"):
+                    # Perform deletion
+                    with st.spinner("Suppression en cours..."):
+                        success = delete_utm_from_bigquery(st.session_state.selected_rows)
+                        
+                        if success:
+                            st.success(f"✅ {num_selected} ligne(s) supprimée(s) avec succès!")
+                            st.session_state.selected_rows = []
+                            st.session_state.show_delete_confirmation = False
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error("❌ Erreur lors de la suppression")
+            
+            with col_cancel_confirm:
+                if st.button("🚫 Annuler", use_container_width=True, key="cancel_delete"):
+                    st.session_state.show_delete_confirmation = False
+                    st.rerun()
         
     elif df is not None:
         st.info("ℹ️ Aucune campagne trouvée avec ces filtres.")
@@ -539,7 +681,7 @@ def generator_page():
     st.markdown("""
     <div class="main-header">
         <h1>🔗 Avisia UTM Builder</h1>
-        <p>Générez des URLs trackées pour vos campagnes marketing</p>
+        <p>Générés des URLs trackées pour vos campagnes marketing</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -680,7 +822,7 @@ def generator_page():
             # Display URL
             st.code(final_url, language=None)
             
-            # Copy and Save buttons
+            # Copy and Save buttons - ALIGNED WITH SAME STYLING
             col_copy, col_save = st.columns(2)
             
             with col_copy:
@@ -696,7 +838,7 @@ def generator_page():
                 </script>
                 """, unsafe_allow_html=True)
                 
-                if st.button("📋 Copier", use_container_width=True):
+                if st.button("📋 Copier", use_container_width=True, type="secondary"):
                     st.success("✅ URL copiée!")
             
             with col_save:
