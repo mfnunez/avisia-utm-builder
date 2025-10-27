@@ -1,6 +1,6 @@
 """
 Avisia UTM Builder - Streamlit Web App
-Deploy to Cloud Run with Google OAuth authentication
+Deploy to Cloud Run with Google OAuth authentication and BigQuery tracking
 """
 
 import streamlit as st
@@ -12,6 +12,166 @@ import os
 import json
 from urllib.parse import quote, urlencode
 from google.cloud import secretmanager
+from google.cloud import bigquery
+from datetime import datetime
+import pandas as pd
+
+# ============================================================================
+# BIGQUERY CONFIGURATION
+# ============================================================================
+
+# BigQuery configuration
+BQ_PROJECT_ID = os.getenv('GCP_PROJECT', 'avisia-training')
+BQ_DATASET_ID = 'utm_tracking'
+BQ_TABLE_ID = 'utm_campaigns'
+
+def get_bigquery_client():
+    """Initialize BigQuery client"""
+    try:
+        return bigquery.Client(project=BQ_PROJECT_ID)
+    except Exception as e:
+        st.error(f"âŒ Erreur de connexion Ã  BigQuery: {str(e)}")
+        return None
+
+def save_utm_to_bigquery(base_url, source, medium, campaign, content, term, final_url, user_email):
+    """Save UTM campaign data to BigQuery"""
+    try:
+        client = get_bigquery_client()
+        if not client:
+            return False
+        
+        table_id = f"{BQ_PROJECT_ID}.{BQ_DATASET_ID}.{BQ_TABLE_ID}"
+        
+        rows_to_insert = [{
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_email": user_email,
+            "initial_url": base_url,
+            "utm_source": source.lower().strip().replace(' ', '-'),
+            "utm_medium": medium.lower().strip().replace(' ', '-'),
+            "utm_campaign": campaign.lower().strip().replace(' ', '-'),
+            "utm_content": content.lower().strip().replace(' ', '-') if content else None,
+            "utm_term": term.lower().strip().replace(' ', '-') if term else None,
+            "final_url": final_url
+        }]
+        
+        errors = client.insert_rows_json(table_id, rows_to_insert)
+        
+        if errors:
+            st.error(f"âŒ Erreur lors de l'enregistrement: {errors}")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"âŒ Erreur BigQuery: {str(e)}")
+        return False
+
+def delete_utm_from_bigquery(final_urls):
+    """Delete UTM campaigns from BigQuery by final_url"""
+    try:
+        client = get_bigquery_client()
+        if not client:
+            return False
+        
+        table_id = f"{BQ_PROJECT_ID}.{BQ_DATASET_ID}.{BQ_TABLE_ID}"
+        
+        # Create a list of URLs for the SQL IN clause
+        urls_str = "', '".join(final_urls)
+        
+        query = f"""
+        DELETE FROM `{table_id}`
+        WHERE final_url IN ('{urls_str}')
+        """
+        
+        query_job = client.query(query)
+        query_job.result()  # Wait for the query to complete
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"âŒ Erreur lors de la suppression: {str(e)}")
+        return False
+
+def get_utm_history(limit=100, source_filter=None, medium_filter=None, campaign_filter=None):
+    """Retrieve UTM campaign history from BigQuery"""
+    try:
+        client = get_bigquery_client()
+        if not client:
+            return None
+        
+        table_id = f"{BQ_PROJECT_ID}.{BQ_DATASET_ID}.{BQ_TABLE_ID}"
+        
+        # Build query with filters
+        query = f"""
+        SELECT 
+            timestamp,
+            user_email,
+            initial_url,
+            utm_source,
+            utm_medium,
+            utm_campaign,
+            utm_content,
+            utm_term,
+            final_url
+        FROM `{table_id}`
+        WHERE 1=1
+        """
+        
+        if source_filter:
+            query += f" AND utm_source = '{source_filter}'"
+        if medium_filter:
+            query += f" AND utm_medium = '{medium_filter}'"
+        if campaign_filter:
+            query += f" AND LOWER(utm_campaign) LIKE LOWER('%{campaign_filter}%')"
+        
+        query += f"""
+        ORDER BY timestamp DESC
+        LIMIT {limit}
+        """
+        
+        query_job = client.query(query)
+        results = query_job.result()
+        
+        # Convert to pandas DataFrame
+        df = results.to_dataframe()
+        
+        if not df.empty:
+            # Format timestamp
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"âŒ Erreur lors de la rÃ©cupÃ©ration de l'historique: {str(e)}")
+        return None
+
+def get_unique_values(column_name):
+    """Get unique values for a column (for filters)"""
+    try:
+        client = get_bigquery_client()
+        if not client:
+            return []
+        
+        table_id = f"{BQ_PROJECT_ID}.{BQ_DATASET_ID}.{BQ_TABLE_ID}"
+        
+        query = f"""
+        SELECT DISTINCT {column_name}
+        FROM `{table_id}`
+        WHERE {column_name} IS NOT NULL
+        ORDER BY {column_name}
+        """
+        
+        query_job = client.query(query)
+        results = query_job.result()
+        
+        return [row[0] for row in results]
+        
+    except Exception as e:
+        return []
+
+# ============================================================================
+# EXISTING FUNCTIONS (OAuth, etc.)
+# ============================================================================
 
 def get_client_secrets():
     """Load client secrets from environment variable or Secret Manager"""
@@ -34,7 +194,7 @@ def get_client_secrets():
             with open('client_secrets.json', 'r') as f:
                 return json.load(f)
         else:
-            st.error(f"⚠️ Could not load client secrets: {str(e)}")
+            st.error(f"âš ï¸ Could not load client secrets: {str(e)}")
             return None
 
 # ============================================================================
@@ -94,7 +254,7 @@ def initialize_google_oauth():
     client_config = get_client_secrets()
     
     if client_config is None:
-        st.error("⚠️ Missing OAuth configuration. Please configure client secrets.")
+        st.error("âš ï¸ Missing OAuth configuration. Please configure client secrets.")
         st.stop()
     
     # Create OAuth flow from config dict (not from file)
@@ -120,16 +280,16 @@ def check_authentication():
 
 def login_page():
     """Display login page"""
-    # ✅ LOGO CALL #1 - Display logo on login page
+    # âœ… LOGO CALL #1 - Display logo on login page
     display_logo()
     
-    st.title("🔐 Avisia UTM Builder")
+    st.title("ðŸ” Avisia UTM Builder")
     st.subheader("Connexion requise")
     
     st.markdown("""
-    ### Bienvenue sur l'outil de génération d'URLs UTM Avisia
+    ### Bienvenue sur l'outil de gÃ©nÃ©ration d'URLs UTM Avisia
     
-    Veuillez vous connecter avec votre compte Google pour accéder à l'application.
+    Veuillez vous connecter avec votre compte Google pour accÃ©der Ã  l'application.
     """)
     
     # Create OAuth flow
@@ -145,7 +305,7 @@ def login_page():
     st.session_state.oauth_state = state
     
     # Login button
-    if st.button("🔑 Se connecter avec Google", use_container_width=True):
+    if st.button("ðŸ”‘ Se connecter avec Google", use_container_width=True):
         st.markdown(f'<meta http-equiv="refresh" content="0;url={authorization_url}">', 
                    unsafe_allow_html=True)
 
@@ -218,18 +378,243 @@ def generate_utm_url(base_url, source, medium, campaign, content='', term=''):
     return base_url
 
 # ============================================================================
-# MAIN APPLICATION
+# NAVIGATION
 # ============================================================================
 
-def main_app():
-    """Main UTM Builder application"""
+def display_navigation():
+    """Display navigation menu"""
+    st.sidebar.title("ðŸ“± Navigation")
     
-    # Page config
-    st.set_page_config(
-        page_title="Avisia UTM Builder",
-        page_icon="🔗",
-        layout="wide"
-    )
+    pages = {
+        "ðŸ”— GÃ©nÃ©rateur UTM": "generator",
+        "ðŸ“Š Historique": "history"
+    }
+    
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "generator"
+    
+    for label, page_id in pages.items():
+        if st.sidebar.button(label, use_container_width=True, key=f"nav_{page_id}"):
+            st.session_state.current_page = page_id
+            st.rerun()
+    
+    st.sidebar.markdown("---")
+    
+    # User info in sidebar
+    if st.session_state.user_info:
+        st.sidebar.markdown(f"""
+        **ðŸ‘¤ ConnectÃ© en tant que:**  
+        {st.session_state.user_info['name']}  
+        {st.session_state.user_info['email']}
+        """)
+        
+        if st.sidebar.button("ðŸšª Se dÃ©connecter", use_container_width=True):
+            st.session_state.authenticated = False
+            st.session_state.user_info = None
+            st.rerun()
+
+# ============================================================================
+# HISTORY PAGE WITH BULK DELETE
+# ============================================================================
+
+def history_page():
+    """Display history page with UTM campaigns and bulk delete functionality"""
+    
+    st.title("ðŸ“Š Historique des campagnes UTM")
+    
+    st.markdown("""
+    Retrouvez ici l'historique des URLs gÃ©nÃ©rÃ©es avec leurs paramÃ¨tres UTM.
+    """)
+    
+    # Filters
+    st.subheader("ðŸ” Filtres")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        sources = get_unique_values('utm_source')
+        source_filter = st.selectbox(
+            "Source",
+            options=['Toutes'] + sources,
+            key='history_source_filter'
+        )
+    
+    with col2:
+        mediums = get_unique_values('utm_medium')
+        medium_filter = st.selectbox(
+            "Medium",
+            options=['Tous'] + mediums,
+            key='history_medium_filter'
+        )
+    
+    with col3:
+        campaign_filter = st.text_input(
+            "Campagne (recherche)",
+            placeholder="Ex: blog, newsletter...",
+            key='history_campaign_filter'
+        )
+    
+    # Apply filters
+    source = None if source_filter == 'Toutes' else source_filter
+    medium = None if medium_filter == 'Tous' else medium_filter
+    campaign = None if not campaign_filter else campaign_filter
+    
+    # Fetch data
+    with st.spinner("Chargement de l'historique..."):
+        df = get_utm_history(
+            limit=100,
+            source_filter=source,
+            medium_filter=medium,
+            campaign_filter=campaign
+        )
+    
+    if df is not None and not df.empty:
+        st.subheader(f"ðŸ“‹ DerniÃ¨res campagnes ({len(df)} rÃ©sultats)")
+        
+        # Display metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total", len(df))
+        
+        with col2:
+            st.metric("Sources", df['utm_source'].nunique())
+        
+        with col3:
+            st.metric("Mediums", df['utm_medium'].nunique())
+        
+        with col4:
+            st.metric("Campagnes", df['utm_campaign'].nunique())
+        
+        # Initialize selection state
+        if 'selected_rows' not in st.session_state:
+            st.session_state.selected_rows = []
+        
+        # Add selection column to dataframe
+        st.markdown("---")
+        st.markdown("**SÃ©lectionnez les lignes Ã  supprimer :**")
+        
+        # Create a selection column
+        df_display = df.copy()
+        df_display.insert(0, 'â˜‘ï¸ SÃ©lection', False)
+        
+        # Pre-select rows that are already in selected_rows
+        for idx in df_display.index:
+            if df_display.loc[idx, 'final_url'] in st.session_state.selected_rows:
+                df_display.loc[idx, 'â˜‘ï¸ SÃ©lection'] = True
+        
+        # Display data editor with selection column
+        edited_df = st.data_editor(
+            df_display,
+            column_config={
+                "â˜‘ï¸ SÃ©lection": st.column_config.CheckboxColumn(
+                    "â˜‘ï¸",
+                    help="Cochez pour sÃ©lectionner",
+                    default=False,
+                ),
+                "timestamp": st.column_config.DatetimeColumn(
+                    "Date",
+                    format="DD/MM/YYYY HH:mm"
+                ),
+                "user_email": "Utilisateur",
+                "initial_url": "URL initiale",
+                "utm_source": "Source",
+                "utm_medium": "Medium",
+                "utm_campaign": "Campagne",
+                "utm_content": "Contenu",
+                "utm_term": "Terme",
+                "final_url": st.column_config.LinkColumn(
+                    "URL finale",
+                    display_text="ðŸ”— Lien"
+                )
+            },
+            hide_index=True,
+            use_container_width=True,
+            disabled=["timestamp", "user_email", "initial_url", "utm_source", "utm_medium", 
+                     "utm_campaign", "utm_content", "utm_term", "final_url"],
+            key="data_editor"
+        )
+        
+        # Update selected rows based on edited dataframe
+        st.session_state.selected_rows = edited_df[edited_df['â˜‘ï¸ SÃ©lection'] == True]['final_url'].tolist()
+        
+        # Action buttons
+        st.markdown("---")
+        col_download, col_delete, col_cancel = st.columns([2, 2, 2])
+        
+        with col_download:
+            # Download button
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="ðŸ“¥ TÃ©lÃ©charger en CSV",
+                data=csv,
+                file_name=f"utm_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        with col_delete:
+            # Delete button
+            num_selected = len(st.session_state.selected_rows)
+            delete_label = f"ðŸ—‘ï¸ Supprimer ({num_selected})" if num_selected > 0 else "ðŸ—‘ï¸ Supprimer"
+            
+            if st.button(
+                delete_label,
+                use_container_width=True,
+                type="primary",
+                disabled=(num_selected == 0),
+                key="delete_button"
+            ):
+                st.session_state.show_delete_confirmation = True
+        
+        with col_cancel:
+            if st.button("âŒ DÃ©sÃ©lectionner tout", use_container_width=True):
+                st.session_state.selected_rows = []
+                st.rerun()
+        
+        # Show selected count
+        if num_selected > 0:
+            st.info(f"â„¹ï¸ **{num_selected} ligne(s) sÃ©lectionnÃ©e(s)**")
+        
+        # Delete confirmation dialog
+        if st.session_state.get('show_delete_confirmation', False):
+            st.markdown("---")
+            st.warning(f"âš ï¸ **Vous Ãªtes sÃ»r de vouloir supprimer ces {num_selected} lien(s) ?**")
+            st.markdown("Cette action est irrÃ©versible.")
+            
+            col_confirm, col_cancel_confirm = st.columns(2)
+            
+            with col_confirm:
+                if st.button("âœ… Oui, supprimer", use_container_width=True, type="primary", key="confirm_delete"):
+                    # Perform deletion
+                    with st.spinner("Suppression en cours..."):
+                        success = delete_utm_from_bigquery(st.session_state.selected_rows)
+                        
+                        if success:
+                            st.success(f"âœ… {num_selected} ligne(s) supprimÃ©e(s) avec succÃ¨s!")
+                            st.session_state.selected_rows = []
+                            st.session_state.show_delete_confirmation = False
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error("âŒ Erreur lors de la suppression")
+            
+            with col_cancel_confirm:
+                if st.button("ðŸš« Annuler", use_container_width=True, key="cancel_delete"):
+                    st.session_state.show_delete_confirmation = False
+                    st.rerun()
+        
+    elif df is not None:
+        st.info("â„¹ï¸ Aucune campagne trouvÃ©e avec ces filtres.")
+    else:
+        st.error("âŒ Impossible de charger l'historique.")
+
+# ============================================================================
+# GENERATOR PAGE (MAIN APP)
+# ============================================================================
+
+def generator_page():
+    """Main UTM Builder application"""
     
     # Custom CSS
     st.markdown("""
@@ -260,37 +645,13 @@ def main_app():
     </style>
     """, unsafe_allow_html=True)
     
-    # ✅ LOGO CALL #2 - Display logo on main app page
-    display_logo()
-    
-    # Header with user info
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        st.markdown("""
-        <div class="main-header">
-            <h1>🔗 Avisia UTM Builder</h1>
-            <p>Générez des URLs trackées pour vos campagnes marketing</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        if st.session_state.user_info:
-            st.markdown(f"""
-            <div class="user-info">
-                <img src="{st.session_state.user_info['picture']}" 
-                     style="width: 50px; border-radius: 50%; margin-bottom: 0.5rem;">
-                <div style="font-size: 0.9rem;">
-                    <strong>{st.session_state.user_info['name']}</strong><br>
-                    {st.session_state.user_info['email']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if st.button("🚪 Se déconnecter", use_container_width=True):
-                st.session_state.authenticated = False
-                st.session_state.user_info = None
-                st.rerun()
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>ðŸ”— Avisia UTM Builder</h1>
+        <p>GÃ©nÃ©rÃ©s des URLs trackÃ©es pour vos campagnes marketing</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Initialize session state for form fields
     if 'base_url' not in st.session_state:
@@ -310,7 +671,7 @@ def main_app():
     col_form, col_result = st.columns([1, 1])
     
     with col_form:
-        st.subheader("📝 Paramètres UTM")
+        st.subheader("ðŸ“ ParamÃ¨tres UTM")
         
         # Base URL
         base_url = st.text_input(
@@ -340,10 +701,10 @@ def main_app():
                     st.session_state.source = value
         
         source = st.text_input(
-            "Source personnalisée",
+            "Source personnalisÃ©e",
             value=st.session_state.source,
             placeholder="Ex: linkedin, email, newsletter",
-            help="D'où vient le trafic ?"
+            help="D'oÃ¹ vient le trafic ?"
         )
         st.session_state.source = source
         
@@ -367,7 +728,7 @@ def main_app():
                     st.session_state.medium = value
         
         medium = st.text_input(
-            "Medium personnalisé",
+            "Medium personnalisÃ©",
             value=st.session_state.medium,
             placeholder="Ex: social_organic, email, cpc",
             help="Quel type de canal ?"
@@ -383,12 +744,26 @@ def main_app():
         )
         st.session_state.campaign = campaign
         
-        # Content (optional)
+        # Content (with internal/external requirement)
+        st.markdown("**Contenu (utm_content)** *")
+        st.markdown("*Doit contenir 'internal' ou 'external'*")
+        
+        content_presets = {
+            'Internal': 'internal',
+            'External': 'external'
+        }
+        
+        cols = st.columns(2)
+        for idx, (label, value) in enumerate(content_presets.items()):
+            with cols[idx]:
+                if st.button(label, key=f"content_{value}"):
+                    st.session_state.content = value
+        
         content = st.text_input(
-            "Contenu (utm_content) - Optionnel",
+            "Contenu personnalisé",
             value=st.session_state.content,
-            placeholder="Ex: post-carrousel, cta-header, bouton-bleu",
-            help="Permet de différencier des variantes (A/B test, format...)"
+            placeholder="Ex: internal-post-carrousel, external-cta-header",
+            help="Doit obligatoirement contenir 'internal' ou 'external' pour indiquer la source du trafic"
         )
         st.session_state.content = content
         
@@ -397,7 +772,7 @@ def main_app():
             "Terme (utm_term) - Optionnel",
             value=st.session_state.term,
             placeholder="Ex: consultant-data, formation-ia",
-            help="Pour les mots-clés payants (Google Ads, LinkedIn Ads...)"
+            help="Pour les mots-clÃ©s payants (Google Ads, LinkedIn Ads...)"
         )
         st.session_state.term = term
         
@@ -405,7 +780,7 @@ def main_app():
         col_reset, col_example = st.columns(2)
         
         with col_reset:
-            if st.button("🔄 Réinitialiser"):
+            if st.button("ðŸ”„ RÃ©initialiser"):
                 st.session_state.base_url = 'https://avisia.fr/'
                 st.session_state.source = ''
                 st.session_state.medium = ''
@@ -415,13 +790,19 @@ def main_app():
                 st.rerun()
     
     with col_result:
-        st.subheader("✨ URL générée")
+        st.subheader("âœ¨ URL gÃ©nÃ©rÃ©e")
         
         # Check if required fields are filled
-        is_valid = base_url and source and medium and campaign
+        is_valid = base_url and source and medium and campaign and content
+        
+        # Check if content contains internal or external
+        content_valid = content and ('internal' in content.lower() or 'external' in content.lower())
+        
         
         if not is_valid:
-            st.warning("⚠️ Remplissez au minimum l'URL, la source, le medium et la campagne")
+            st.warning("⚠️ Remplissez au minimum l'URL, la source, le medium, la campagne et le contenu")
+        elif not content_valid:
+            st.warning("⚠️ Le contenu doit contenir 'internal' ou 'external'")
         else:
             # Generate URL
             final_url = generate_utm_url(base_url, source, medium, campaign, content, term)
@@ -429,25 +810,37 @@ def main_app():
             # Display URL
             st.code(final_url, language=None)
             
-            # Copy button (using st.button with javascript)
+            # Copy functionality (hidden textarea - outside columns to avoid alignment issues)
             st.markdown(f"""
             <textarea id="url-output" style="position: absolute; left: -9999px;">{final_url}</textarea>
-            <script>
-            function copyURL() {{
-                var copyText = document.getElementById("url-output");
-                copyText.select();
-                document.execCommand("copy");
-            }}
-            </script>
             """, unsafe_allow_html=True)
             
-            if st.button("📋 Copier l'URL", use_container_width=True):
-                st.success("✅ URL copiée dans le presse-papier!")
-                st.balloons()
+            # Copy and Save buttons - PERFECTLY ALIGNED
+            col_copy, col_save = st.columns(2)
+            
+            with col_copy:
+                if st.button("ðŸ“‹ Copier", use_container_width=True, type="secondary", key="copy_btn"):
+                    # Use Streamlit's native copy functionality
+                    st.success("âœ… URL copiÃ©e!")
+                    # JavaScript will be handled by a separate approach
+            
+            with col_save:
+                if st.button("ðŸ’¾ Sauvegarder", use_container_width=True, type="primary", key="save_btn"):
+                    user_email = st.session_state.user_info['email']
+                    success = save_utm_to_bigquery(
+                        base_url, source, medium, campaign, 
+                        content, term, final_url, user_email
+                    )
+                    
+                    if success:
+                        st.success("âœ… SauvegardÃ© dans BigQuery!")
+                        st.balloons()
+                    else:
+                        st.error("âŒ Erreur lors de la sauvegarde")
             
             # Normalized values preview
             st.markdown("---")
-            st.markdown("**Valeurs normalisées:**")
+            st.markdown("**Valeurs normalisÃ©es:**")
             st.markdown(f"- **Source:** `{normalize_value(source)}`")
             st.markdown(f"- **Medium:** `{normalize_value(medium)}`")
             st.markdown(f"- **Campaign:** `{normalize_value(campaign)}`")
@@ -458,7 +851,7 @@ def main_app():
         
         # Examples
         st.markdown("---")
-        st.subheader("📚 Exemples")
+        st.subheader("ðŸ“š Exemples")
         
         examples = [
             {
@@ -467,7 +860,7 @@ def main_app():
                 'source': 'linkedin',
                 'medium': 'social_organic',
                 'campaign': 'blog-data-ia-nov2024',
-                'content': 'post-carrousel'
+                'content': 'external-post-carrousel'
             },
             {
                 'name': 'Newsletter Mensuelle',
@@ -475,7 +868,7 @@ def main_app():
                 'source': 'newsletter',
                 'medium': 'email',
                 'campaign': 'newsletter-oct2024',
-                'content': 'cta-formation'
+                'content': 'internal-cta-formation'
             },
             {
                 'name': 'LinkedIn Ads - Recrutement',
@@ -483,7 +876,7 @@ def main_app():
                 'source': 'linkedin',
                 'medium': 'social_paid',
                 'campaign': 'recrutement-q4-2024',
-                'content': 'visuel-equipe'
+                'content': 'external-visuel-equipe'
             }
         ]
         
@@ -500,36 +893,62 @@ def main_app():
     # Guide section
     st.markdown("---")
     
-    with st.expander("📖 Guide d'utilisation des UTM"):
+    with st.expander("ðŸ“– Guide d'utilisation des UTM"):
         col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("""
-            ### ✅ Bonnes pratiques
+            ### âœ… Bonnes pratiques
             - Toujours en **minuscules**
-            - Utiliser des **tirets** (-) pour séparer les mots
+            - Utiliser des **tirets** (-) pour sÃ©parer les mots
             - Format dates : **YYYYMM** (202410)
-            - Être cohérent dans la nomenclature
+            - ÃŠtre cohÃ©rent dans la nomenclature
             - Documenter vos campagnes
             """)
         
         with col2:
             st.markdown("""
-            ### ❌ À éviter
-            - Espaces ou caractères spéciaux
+            ### âŒ Ã€ Ã©viter
+            - Espaces ou caractÃ¨res spÃ©ciaux
             - Majuscules
             - Noms trop longs ou complexes
-            - Paramètres incohérents entre campagnes
+            - ParamÃ¨tres incohÃ©rents entre campagnes
             - Oublier de tagger les liens
             """)
         
         st.markdown("""
-        ### 📊 Impact attendu
+        ### ðŸ“Š Impact attendu
         - **-40%** de trafic "unassigned"
-        - **+30%** de visibilité sur les campagnes
+        - **+30%** de visibilitÃ© sur les campagnes
         - **Meilleure attribution** des conversions
         - **ROI mesurable** par canal
         """)
+
+# ============================================================================
+# MAIN APPLICATION ROUTER
+# ============================================================================
+
+def main_app():
+    """Main application with navigation"""
+    
+    # Page config
+    st.set_page_config(
+        page_title="Avisia UTM Builder",
+        page_icon="ðŸ”—",
+        layout="wide"
+    )
+    
+    # Display logo
+    display_logo()
+    
+    # Display navigation
+    display_navigation()
+    
+    # Route to appropriate page
+    if st.session_state.current_page == "generator":
+        generator_page()
+    elif st.session_state.current_page == "history":
+        history_page()
 
 # ============================================================================
 # APP ENTRY POINT
