@@ -30,7 +30,7 @@ def get_bigquery_client():
     try:
         return bigquery.Client(project=BQ_PROJECT_ID)
     except Exception as e:
-        st.error(f"âŒ Erreur de connexion Ã  BigQuery: {str(e)}")
+        st.error(f"❌ Erreur de connexion à BigQuery: {str(e)}")
         return None
 
 def save_utm_to_bigquery(base_url, source, medium, campaign, content, term, final_url, user_email):
@@ -57,13 +57,13 @@ def save_utm_to_bigquery(base_url, source, medium, campaign, content, term, fina
         errors = client.insert_rows_json(table_id, rows_to_insert)
         
         if errors:
-            st.error(f"âŒ Erreur lors de l'enregistrement: {errors}")
+            st.error(f"❌ Erreur lors de l'enregistrement: {errors}")
             return False
         
         return True
         
     except Exception as e:
-        st.error(f"âŒ Erreur BigQuery: {str(e)}")
+        st.error(f"❌ Erreur BigQuery: {str(e)}")
         return False
 
 def delete_utm_from_bigquery(final_urls):
@@ -89,7 +89,7 @@ def delete_utm_from_bigquery(final_urls):
         return True
         
     except Exception as e:
-        st.error(f"âŒ Erreur lors de la suppression: {str(e)}")
+        st.error(f"❌ Erreur lors de la suppression: {str(e)}")
         return False
 
 def get_utm_history(limit=100, source_filter=None, medium_filter=None, campaign_filter=None):
@@ -142,7 +142,7 @@ def get_utm_history(limit=100, source_filter=None, medium_filter=None, campaign_
         return df
         
     except Exception as e:
-        st.error(f"âŒ Erreur lors de la rÃ©cupÃ©ration de l'historique: {str(e)}")
+        st.error(f"❌ Erreur lors de la récupération de l'historique: {str(e)}")
         return None
 
 def get_unique_values(column_name):
@@ -194,7 +194,7 @@ def get_client_secrets():
             with open('client_secrets.json', 'r') as f:
                 return json.load(f)
         else:
-            st.error(f"âš ï¸ Could not load client secrets: {str(e)}")
+            st.error(f"⚠️ Could not load client secrets: {str(e)}")
             return None
 
 # ============================================================================
@@ -254,7 +254,7 @@ def initialize_google_oauth():
     client_config = get_client_secrets()
     
     if client_config is None:
-        st.error("âš ï¸ Missing OAuth configuration. Please configure client secrets.")
+        st.error("⚠️ Missing OAuth configuration. Please configure client secrets.")
         st.stop()
     
     # Create OAuth flow from config dict (not from file)
@@ -280,16 +280,16 @@ def check_authentication():
 
 def login_page():
     """Display login page"""
-    # âœ… LOGO CALL #1 - Display logo on login page
+    # ✅ LOGO CALL #1 - Display logo on login page
     display_logo()
     
-    st.title("ðŸ” Avisia UTM Builder")
+    st.title("🔐 Avisia UTM Builder")
     st.subheader("Connexion requise")
     
     st.markdown("""
-    ### Bienvenue sur l'outil de gÃ©nÃ©ration d'URLs UTM Avisia
+    ### Bienvenue sur l'outil de génération d'URLs UTM Avisia
     
-    Veuillez vous connecter avec votre compte Google pour accÃ©der Ã  l'application.
+    Veuillez vous connecter avec votre compte Google pour accéder à l'application.
     """)
     
     # Create OAuth flow
@@ -305,7 +305,7 @@ def login_page():
     st.session_state.oauth_state = state
     
     # Login button
-    if st.button("ðŸ”‘ Se connecter avec Google", use_container_width=True):
+    if st.button("🔑 Se connecter avec Google", use_container_width=True):
         st.markdown(f'<meta http-equiv="refresh" content="0;url={authorization_url}">', 
                    unsafe_allow_html=True)
 
@@ -383,11 +383,11 @@ def generate_utm_url(base_url, source, medium, campaign, content='', term=''):
 
 def display_navigation():
     """Display navigation menu"""
-    st.sidebar.title("ðŸ“± Navigation")
+    st.sidebar.title("📱 Navigation")
     
     pages = {
-        "ðŸ”— GÃ©nÃ©rateur UTM": "generator",
-        "ðŸ“Š Historique": "history"
+        "🔗 Générateur UTM": "generator",
+        "📊 Historique": "history"
     }
     
     if 'current_page' not in st.session_state:
@@ -403,12 +403,12 @@ def display_navigation():
     # User info in sidebar
     if st.session_state.user_info:
         st.sidebar.markdown(f"""
-        **ðŸ‘¤ ConnectÃ© en tant que:**  
+        **👤 Connecté en tant que:**  
         {st.session_state.user_info['name']}  
         {st.session_state.user_info['email']}
         """)
         
-        if st.sidebar.button("ðŸšª Se dÃ©connecter", use_container_width=True):
+        if st.sidebar.button("🚪 Se déconnecter", use_container_width=True):
             st.session_state.authenticated = False
             st.session_state.user_info = None
             st.rerun()
@@ -420,14 +420,14 @@ def display_navigation():
 def history_page():
     """Display history page with UTM campaigns and bulk delete functionality"""
     
-    st.title("ðŸ“Š Historique des campagnes UTM")
+    st.title("📊 Historique des campagnes UTM")
     
     st.markdown("""
-    Retrouvez ici l'historique des URLs gÃ©nÃ©rÃ©es avec leurs paramÃ¨tres UTM.
+    Retrouvez ici l'historique des URLs générées avec leurs paramètres UTM.
     """)
     
     # Filters
-    st.subheader("ðŸ” Filtres")
+    st.subheader("🔍 Filtres")
     
     col1, col2, col3 = st.columns(3)
     
@@ -469,7 +469,7 @@ def history_page():
         )
     
     if df is not None and not df.empty:
-        st.subheader(f"ðŸ“‹ DerniÃ¨res campagnes ({len(df)} rÃ©sultats)")
+        st.subheader(f"📋 Dernières campagnes ({len(df)} résultats)")
         
         # Display metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -492,24 +492,24 @@ def history_page():
         
         # Add selection column to dataframe
         st.markdown("---")
-        st.markdown("**SÃ©lectionnez les lignes Ã  supprimer :**")
+        st.markdown("**Sélectionnez les lignes à supprimer :**")
         
         # Create a selection column
         df_display = df.copy()
-        df_display.insert(0, 'â˜‘ï¸ SÃ©lection', False)
+        df_display.insert(0, '☑️ Sélection', False)
         
         # Pre-select rows that are already in selected_rows
         for idx in df_display.index:
             if df_display.loc[idx, 'final_url'] in st.session_state.selected_rows:
-                df_display.loc[idx, 'â˜‘ï¸ SÃ©lection'] = True
+                df_display.loc[idx, '☑️ Sélection'] = True
         
         # Display data editor with selection column
         edited_df = st.data_editor(
             df_display,
             column_config={
-                "â˜‘ï¸ SÃ©lection": st.column_config.CheckboxColumn(
-                    "â˜‘ï¸",
-                    help="Cochez pour sÃ©lectionner",
+                "☑️ Sélection": st.column_config.CheckboxColumn(
+                    "☑️",
+                    help="Cochez pour sélectionner",
                     default=False,
                 ),
                 "timestamp": st.column_config.DatetimeColumn(
@@ -525,7 +525,7 @@ def history_page():
                 "utm_term": "Terme",
                 "final_url": st.column_config.LinkColumn(
                     "URL finale",
-                    display_text="ðŸ”— Lien"
+                    display_text="🔗 Lien"
                 )
             },
             hide_index=True,
@@ -536,7 +536,7 @@ def history_page():
         )
         
         # Update selected rows based on edited dataframe
-        st.session_state.selected_rows = edited_df[edited_df['â˜‘ï¸ SÃ©lection'] == True]['final_url'].tolist()
+        st.session_state.selected_rows = edited_df[edited_df['☑️ Sélection'] == True]['final_url'].tolist()
         
         # Action buttons
         st.markdown("---")
@@ -546,7 +546,7 @@ def history_page():
             # Download button
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="ðŸ“¥ TÃ©lÃ©charger en CSV",
+                label="📥 Télécharger en CSV",
                 data=csv,
                 file_name=f"utm_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
@@ -556,7 +556,7 @@ def history_page():
         with col_delete:
             # Delete button
             num_selected = len(st.session_state.selected_rows)
-            delete_label = f"ðŸ—‘ï¸ Supprimer ({num_selected})" if num_selected > 0 else "ðŸ—‘ï¸ Supprimer"
+            delete_label = f"🗑️ Supprimer ({num_selected})" if num_selected > 0 else "🗑️ Supprimer"
             
             if st.button(
                 delete_label,
@@ -568,46 +568,46 @@ def history_page():
                 st.session_state.show_delete_confirmation = True
         
         with col_cancel:
-            if st.button("âŒ DÃ©sÃ©lectionner tout", use_container_width=True):
+            if st.button("❌ Désélectionner tout", use_container_width=True):
                 st.session_state.selected_rows = []
                 st.rerun()
         
         # Show selected count
         if num_selected > 0:
-            st.info(f"â„¹ï¸ **{num_selected} ligne(s) sÃ©lectionnÃ©e(s)**")
+            st.info(f"ℹ️ **{num_selected} ligne(s) sélectionnée(s)**")
         
         # Delete confirmation dialog
         if st.session_state.get('show_delete_confirmation', False):
             st.markdown("---")
-            st.warning(f"âš ï¸ **Vous Ãªtes sÃ»r de vouloir supprimer ces {num_selected} lien(s) ?**")
-            st.markdown("Cette action est irrÃ©versible.")
+            st.warning(f"⚠️ **Vous êtes sûr de vouloir supprimer ces {num_selected} lien(s) ?**")
+            st.markdown("Cette action est irréversible.")
             
             col_confirm, col_cancel_confirm = st.columns(2)
             
             with col_confirm:
-                if st.button("âœ… Oui, supprimer", use_container_width=True, type="primary", key="confirm_delete"):
+                if st.button("✅ Oui, supprimer", use_container_width=True, type="primary", key="confirm_delete"):
                     # Perform deletion
                     with st.spinner("Suppression en cours..."):
                         success = delete_utm_from_bigquery(st.session_state.selected_rows)
                         
                         if success:
-                            st.success(f"âœ… {num_selected} ligne(s) supprimÃ©e(s) avec succÃ¨s!")
+                            st.success(f"✅ {num_selected} ligne(s) supprimée(s) avec succès!")
                             st.session_state.selected_rows = []
                             st.session_state.show_delete_confirmation = False
                             st.balloons()
                             st.rerun()
                         else:
-                            st.error("âŒ Erreur lors de la suppression")
+                            st.error("❌ Erreur lors de la suppression")
             
             with col_cancel_confirm:
-                if st.button("ðŸš« Annuler", use_container_width=True, key="cancel_delete"):
+                if st.button("🚫 Annuler", use_container_width=True, key="cancel_delete"):
                     st.session_state.show_delete_confirmation = False
                     st.rerun()
         
     elif df is not None:
-        st.info("â„¹ï¸ Aucune campagne trouvÃ©e avec ces filtres.")
+        st.info("ℹ️ Aucune campagne trouvée avec ces filtres.")
     else:
-        st.error("âŒ Impossible de charger l'historique.")
+        st.error("❌ Impossible de charger l'historique.")
 
 # ============================================================================
 # GENERATOR PAGE (MAIN APP)
@@ -648,8 +648,8 @@ def generator_page():
     # Header
     st.markdown("""
     <div class="main-header">
-        <h1>ðŸ”— Avisia UTM Builder</h1>
-        <p>GÃ©nÃ©rÃ©s des URLs trackÃ©es pour vos campagnes marketing</p>
+        <h1>🔗 Avisia UTM Builder</h1>
+        <p>Générés des URLs trackées pour vos campagnes marketing</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -671,7 +671,7 @@ def generator_page():
     col_form, col_result = st.columns([1, 1])
     
     with col_form:
-        st.subheader("ðŸ“ ParamÃ¨tres UTM")
+        st.subheader("📝 Paramètres UTM")
         
         # Base URL
         base_url = st.text_input(
@@ -701,10 +701,10 @@ def generator_page():
                     st.session_state.source = value
         
         source = st.text_input(
-            "Source personnalisÃ©e",
+            "Source personnalisée",
             value=st.session_state.source,
             placeholder="Ex: linkedin, email, newsletter",
-            help="D'oÃ¹ vient le trafic ?"
+            help="D'où vient le trafic ?"
         )
         st.session_state.source = source
         
@@ -728,7 +728,7 @@ def generator_page():
                     st.session_state.medium = value
         
         medium = st.text_input(
-            "Medium personnalisÃ©",
+            "Medium personnalisé",
             value=st.session_state.medium,
             placeholder="Ex: social_organic, email, cpc",
             help="Quel type de canal ?"
@@ -772,7 +772,7 @@ def generator_page():
             "Terme (utm_term) - Optionnel",
             value=st.session_state.term,
             placeholder="Ex: consultant-data, formation-ia",
-            help="Pour les mots-clÃ©s payants (Google Ads, LinkedIn Ads...)"
+            help="Pour les mots-clés payants (Google Ads, LinkedIn Ads...)"
         )
         st.session_state.term = term
         
@@ -780,7 +780,7 @@ def generator_page():
         col_reset, col_example = st.columns(2)
         
         with col_reset:
-            if st.button("ðŸ”„ RÃ©initialiser"):
+            if st.button("🔄 Réinitialiser"):
                 st.session_state.base_url = 'https://avisia.fr/'
                 st.session_state.source = ''
                 st.session_state.medium = ''
@@ -790,14 +790,13 @@ def generator_page():
                 st.rerun()
     
     with col_result:
-        st.subheader("âœ¨ URL gÃ©nÃ©rÃ©e")
+        st.subheader("✨ URL générée")
         
         # Check if required fields are filled
         is_valid = base_url and source and medium and campaign and content
         
         # Check if content contains internal or external
         content_valid = content and ('internal' in content.lower() or 'external' in content.lower())
-        
         
         if not is_valid:
             st.warning("⚠️ Remplissez au minimum l'URL, la source, le medium, la campagne et le contenu")
@@ -819,13 +818,13 @@ def generator_page():
             col_copy, col_save = st.columns(2)
             
             with col_copy:
-                if st.button("ðŸ“‹ Copier", use_container_width=True, type="secondary", key="copy_btn"):
+                if st.button("📋 Copier", use_container_width=True, type="secondary", key="copy_btn"):
                     # Use Streamlit's native copy functionality
-                    st.success("âœ… URL copiÃ©e!")
+                    st.success("✅ URL copiée!")
                     # JavaScript will be handled by a separate approach
             
             with col_save:
-                if st.button("ðŸ’¾ Sauvegarder", use_container_width=True, type="primary", key="save_btn"):
+                if st.button("💾 Sauvegarder", use_container_width=True, type="primary", key="save_btn"):
                     user_email = st.session_state.user_info['email']
                     success = save_utm_to_bigquery(
                         base_url, source, medium, campaign, 
@@ -833,14 +832,14 @@ def generator_page():
                     )
                     
                     if success:
-                        st.success("âœ… SauvegardÃ© dans BigQuery!")
+                        st.success("✅ Sauvegardé dans BigQuery!")
                         st.balloons()
                     else:
-                        st.error("âŒ Erreur lors de la sauvegarde")
+                        st.error("❌ Erreur lors de la sauvegarde")
             
             # Normalized values preview
             st.markdown("---")
-            st.markdown("**Valeurs normalisÃ©es:**")
+            st.markdown("**Valeurs normalisées:**")
             st.markdown(f"- **Source:** `{normalize_value(source)}`")
             st.markdown(f"- **Medium:** `{normalize_value(medium)}`")
             st.markdown(f"- **Campaign:** `{normalize_value(campaign)}`")
@@ -851,7 +850,7 @@ def generator_page():
         
         # Examples
         st.markdown("---")
-        st.subheader("ðŸ“š Exemples")
+        st.subheader("📚 Exemples")
         
         examples = [
             {
@@ -893,33 +892,33 @@ def generator_page():
     # Guide section
     st.markdown("---")
     
-    with st.expander("ðŸ“– Guide d'utilisation des UTM"):
+    with st.expander("📖 Guide d'utilisation des UTM"):
         col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("""
-            ### âœ… Bonnes pratiques
+            ### ✅ Bonnes pratiques
             - Toujours en **minuscules**
-            - Utiliser des **tirets** (-) pour sÃ©parer les mots
+            - Utiliser des **tirets** (-) pour séparer les mots
             - Format dates : **YYYYMM** (202410)
-            - ÃŠtre cohÃ©rent dans la nomenclature
+            - Être cohérent dans la nomenclature
             - Documenter vos campagnes
             """)
         
         with col2:
             st.markdown("""
-            ### âŒ Ã€ Ã©viter
-            - Espaces ou caractÃ¨res spÃ©ciaux
+            ### ❌ À éviter
+            - Espaces ou caractères spéciaux
             - Majuscules
             - Noms trop longs ou complexes
-            - ParamÃ¨tres incohÃ©rents entre campagnes
+            - Paramètres incohérents entre campagnes
             - Oublier de tagger les liens
             """)
         
         st.markdown("""
-        ### ðŸ“Š Impact attendu
+        ### 📊 Impact attendu
         - **-40%** de trafic "unassigned"
-        - **+30%** de visibilitÃ© sur les campagnes
+        - **+30%** de visibilité sur les campagnes
         - **Meilleure attribution** des conversions
         - **ROI mesurable** par canal
         """)
@@ -934,7 +933,7 @@ def main_app():
     # Page config
     st.set_page_config(
         page_title="Avisia UTM Builder",
-        page_icon="ðŸ”—",
+        page_icon="🔗",
         layout="wide"
     )
     
