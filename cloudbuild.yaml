@@ -18,6 +18,11 @@ steps:
       - '--platform=managed'
       - '--allow-unauthenticated'
       - '--set-secrets=GOOGLE_CLIENT_SECRETS=oauth-client-secrets:latest'
+      - '--set-env-vars=GCP_PROJECT=$PROJECT_ID'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--timeout=300'
+      - '--max-instances=10'
 
 images:
   - 'europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/avisia-utm-builder'

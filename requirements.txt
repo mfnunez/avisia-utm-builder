@@ -5,9 +5,8 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2>=0.1.1
 google-cloud-bigquery>=3.11.0
+google-cloud-storage>=2.10.0
 db-dtypes>=1.1.1
 
-# Analytics Page - Gemini via Vertex AI
-google-genai>=0.2.0
+# Analytics Page - Cloud Storage reports
 plotly>=5.18.0
-google-analytics-mcp
