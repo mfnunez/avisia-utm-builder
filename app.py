@@ -662,6 +662,12 @@ def generator_page():
         st.session_state.medium = ''
     if 'campaign' not in st.session_state:
         st.session_state.campaign = ''
+    if 'campaign_year' not in st.session_state:
+        st.session_state.campaign_year = str(datetime.now().year)
+    if 'campaign_month' not in st.session_state:
+        st.session_state.campaign_month = f"{datetime.now().month:02d}"
+    if 'campaign_name' not in st.session_state:
+        st.session_state.campaign_name = ''
     if 'content' not in st.session_state:
         st.session_state.content = ''
     if 'term' not in st.session_state:
@@ -691,9 +697,13 @@ def generator_page():
             'Twitter/X': 'twitter',
             'YouTube': 'youtube',
             'Instagram': 'instagram',
-            'Signature Email': 'signature-email'
+            'Signature Email': 'signature-email',
+            'Reddit': 'reddit',
+            'Webinar': 'webinar',
+            'Google': 'google',
+            'Event': 'event'
         }
-        
+
         cols = st.columns(4)
         for idx, (label, value) in enumerate(source_presets.items()):
             with cols[idx % 4]:
@@ -718,9 +728,11 @@ def generator_page():
             'CPC': 'cpc',
             'Display': 'display',
             'Banner': 'banner',
-            'Referral': 'referral'
+            'Referral': 'referral',
+            'Physique': 'physique',
+            'Digital': 'digital'
         }
-        
+
         cols = st.columns(4)
         for idx, (label, value) in enumerate(medium_presets.items()):
             with cols[idx % 4]:
@@ -736,13 +748,46 @@ def generator_page():
         st.session_state.medium = medium
         
         # Campaign
-        campaign = st.text_input(
-            "Campagne (utm_campaign) *",
-            value=st.session_state.campaign,
-            placeholder="Ex: blog-data-ia-nov2024",
-            help="Nom de la campagne (utiliser des tirets, minuscules)"
-        )
+        st.markdown("**Campagne (utm_campaign)** *")
+        st.markdown("*Format : `YYYY_MM_Nom-de-la-campagne`*")
+        camp_col1, camp_col2, camp_col3 = st.columns([1, 1, 3])
+        with camp_col1:
+            campaign_year = st.text_input(
+                "Année",
+                value=st.session_state.campaign_year,
+                placeholder="2026",
+                max_chars=4,
+                key="campaign_year_input"
+            )
+            st.session_state.campaign_year = campaign_year
+        with camp_col2:
+            campaign_month = st.text_input(
+                "Mois",
+                value=st.session_state.campaign_month,
+                placeholder="03",
+                max_chars=2,
+                key="campaign_month_input"
+            )
+            st.session_state.campaign_month = campaign_month
+        with camp_col3:
+            campaign_name = st.text_input(
+                "Nom de la campagne",
+                value=st.session_state.campaign_name,
+                placeholder="Ex: Lancement-Offre",
+                help="Utiliser des tirets pour séparer les mots",
+                key="campaign_name_input"
+            )
+            st.session_state.campaign_name = campaign_name
+
+        # Assemble the campaign value
+        if campaign_year and campaign_month and campaign_name:
+            campaign = f"{campaign_year}_{campaign_month}_{campaign_name}"
+        else:
+            campaign = ''
         st.session_state.campaign = campaign
+
+        if campaign:
+            st.caption(f"utm_campaign : `{normalize_value(campaign)}`")
         
         # Content (with internal/external requirement)
         st.markdown("**Contenu (utm_content)** *")
@@ -785,6 +830,9 @@ def generator_page():
                 st.session_state.source = ''
                 st.session_state.medium = ''
                 st.session_state.campaign = ''
+                st.session_state.campaign_year = str(datetime.now().year)
+                st.session_state.campaign_month = f"{datetime.now().month:02d}"
+                st.session_state.campaign_name = ''
                 st.session_state.content = ''
                 st.session_state.term = ''
                 st.rerun()
@@ -858,7 +906,9 @@ def generator_page():
                 'base_url': 'https://avisia.fr/actualites/blog/data/article-ia',
                 'source': 'linkedin',
                 'medium': 'social_organic',
-                'campaign': 'blog-data-ia-nov2024',
+                'campaign_year': '2026',
+                'campaign_month': '03',
+                'campaign_name': 'Blog-Data-IA',
                 'content': 'external-post-carrousel'
             },
             {
@@ -866,7 +916,9 @@ def generator_page():
                 'base_url': 'https://avisia.fr/expertises/formations',
                 'source': 'newsletter',
                 'medium': 'email',
-                'campaign': 'newsletter-oct2024',
+                'campaign_year': '2026',
+                'campaign_month': '03',
+                'campaign_name': 'Newsletter-Formations',
                 'content': 'internal-cta-formation'
             },
             {
@@ -874,17 +926,22 @@ def generator_page():
                 'base_url': 'https://avisia.fr/carriere/offres-emploi',
                 'source': 'linkedin',
                 'medium': 'social_paid',
-                'campaign': 'recrutement-q4-2024',
+                'campaign_year': '2026',
+                'campaign_month': '03',
+                'campaign_name': 'Recrutement-Q2',
                 'content': 'external-visuel-equipe'
             }
         ]
-        
+
         for example in examples:
             if st.button(example['name'], key=f"example_{example['name']}", use_container_width=True):
                 st.session_state.base_url = example['base_url']
                 st.session_state.source = example['source']
                 st.session_state.medium = example['medium']
-                st.session_state.campaign = example['campaign']
+                st.session_state.campaign_year = example['campaign_year']
+                st.session_state.campaign_month = example['campaign_month']
+                st.session_state.campaign_name = example['campaign_name']
+                st.session_state.campaign = f"{example['campaign_year']}_{example['campaign_month']}_{example['campaign_name']}"
                 st.session_state.content = example.get('content', '')
                 st.session_state.term = ''
                 st.rerun()
