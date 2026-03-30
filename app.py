@@ -15,6 +15,8 @@ from google.cloud import secretmanager
 from google.cloud import bigquery
 from datetime import datetime
 import pandas as pd
+from analytics_page import analytics_page
+
 
 # ============================================================================
 # BIGQUERY CONFIGURATION
@@ -168,6 +170,31 @@ def get_unique_values(column_name):
         
     except Exception as e:
         return []
+
+# =====================================================================
+# ANALYTICS ASSISTANT CONFIGURATION (Vertex AI Gemini + GA4 MCP)
+# =====================================================================
+
+#VERTEX_PROJECT_ID = os.getenv("GCP_PROJECT", "avisia-training")
+#VERTEX_LOCATION = "us-central1"  # ou europe-west1 selon ton projet
+
+#def init_vertex_ai():
+    #"""Initialize Vertex AI with Gemini Pro"""
+    #try:
+        #vertexai.init(project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
+        #return GenerativeModel("gemini-1.5-pro")
+    #except Exception as e:
+        #st.error(f"❌ Erreur d'initialisation Vertex AI: {str(e)}")
+        #return None
+
+#def init_ga4_mcp():
+    #"""Initialize GA4 MCP client"""
+    #try:
+        # GA4 MCP config from https://github.com/googleanalytics/google-analytics-mcp
+        #return ga4_mcp.Client()
+    #except Exception as e:
+        #st.error(f"❌ Erreur de connexion au MCP GA4: {str(e)}")
+        #return None
 
 # ============================================================================
 # EXISTING FUNCTIONS (OAuth, etc.)
@@ -387,7 +414,8 @@ def display_navigation():
     
     pages = {
         "🔗 Générateur UTM": "generator",
-        "📊 Historique": "history"
+        "📊 Historique": "history",
+        "🤖 Analytics": "analytics"  # ← NOUVELLE PAGE
     }
     
     if 'current_page' not in st.session_state:
@@ -980,6 +1008,12 @@ def generator_page():
         - **ROI mesurable** par canal
         """)
 
+# =====================================================================
+# ANALYTICS PAGE - Now imported from analytics_page.py
+# =====================================================================
+# The analytics_page() function is imported from analytics_page.py at line 18
+
+
 # ============================================================================
 # MAIN APPLICATION ROUTER
 # ============================================================================
@@ -1005,6 +1039,8 @@ def main_app():
         generator_page()
     elif st.session_state.current_page == "history":
         history_page()
+    elif st.session_state.current_page == "analytics":  # ← NOUVEAU ROUTING
+        analytics_page()
 
 # ============================================================================
 # APP ENTRY POINT
