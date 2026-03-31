@@ -330,19 +330,20 @@ def login_page():
     
     # Store state in session
     st.session_state.oauth_state = state
-    
+
     # Login button
     if st.button("🔑 Se connecter avec Google", use_container_width=True):
-        st.markdown(f'<meta http-equiv="refresh" content="0;url={authorization_url}">', 
+        st.markdown(f'<meta http-equiv="refresh" content="0;url={authorization_url}">',
                    unsafe_allow_html=True)
 
 def handle_oauth_callback():
     """Handle OAuth callback and authenticate user"""
     query_params = st.query_params
-    
-    if 'code' in query_params:
+
+    if 'code' in query_params and not st.session_state.get('authenticated', False):
         code = query_params['code']
-        
+        st.query_params.clear()
+
         try:
             flow = initialize_google_oauth()
             flow.fetch_token(code=code)
@@ -364,8 +365,6 @@ def handle_oauth_callback():
                 'picture': id_info.get('picture')
             }
             
-            # Clear query params
-            st.query_params.clear()
             st.rerun()
             
         except Exception as e:
@@ -1006,6 +1005,51 @@ def generator_page():
         - **+30%** de visibilité sur les campagnes
         - **Meilleure attribution** des conversions
         - **ROI mesurable** par canal
+        """)
+
+        st.markdown("---")
+        st.markdown("### 🗂️ Default Channel Grouping GA4 — Règles d'attribution")
+        st.markdown("GA4 assigne automatiquement un canal selon `utm_source` et `utm_medium`. Voici les règles à respecter :")
+
+        channel_rules = [
+            ("📧 Email",          "utm_medium = `email`",                                                         "source: `newsletter`, `email`, `signature-email`"),
+            ("📱 Organic Social", "utm_medium = `social`, `social-media`, `social_organic`, `sm`",                "source: `linkedin`, `twitter`, `instagram`, `youtube`, `reddit`"),
+            ("💰 Paid Social",    "utm_medium = `paid-social`, `social_paid`, `cpc` + source social",             "source: `linkedin`, `twitter`, `instagram`"),
+            ("🔍 Paid Search",    "utm_medium = `cpc`, `ppc`, `paidsearch`",                                      "source: `google`, `bing`"),
+            ("🖥️ Display",        "utm_medium = `display`, `banner`, `expandable`, `interstitial`",               "source: au choix"),
+            ("🎯 Referral",       "utm_medium = `referral`",                                                      "source: domaine référent"),
+            ("📅 Event/Physique", "utm_medium = `physique`, `digital` + utm_source = `event`, `webinar`",         "Canaux personnalisés Avisia"),
+            ("❓ Unassigned",     "utm_medium non reconnu par GA4",                                               "Vérifier la valeur du medium"),
+        ]
+
+        headers = ["Canal GA4", "Règle utm_medium", "utm_source recommandé"]
+        col1, col2, col3 = st.columns([1, 2, 2])
+        col1.markdown(f"**{headers[0]}**")
+        col2.markdown(f"**{headers[1]}**")
+        col3.markdown(f"**{headers[2]}**")
+        st.markdown("<hr style='margin: 4px 0'>", unsafe_allow_html=True)
+
+        for canal, medium_rule, source_rec in channel_rules:
+            col1, col2, col3 = st.columns([1, 2, 2])
+            col1.markdown(canal)
+            col2.markdown(medium_rule)
+            col3.markdown(source_rec)
+
+        st.warning("""
+⚠️ **`physique` et `digital` : configuration GA4 requise**
+
+Ces deux mediums sont **personnalisés Avisia** — GA4 ne les reconnaît pas nativement et les classera en **Unassigned** sans action de votre part.
+
+**Pour les reconnaître dans GA4, créer 2 canaux personnalisés :**
+
+*Admin → Data Display → Channel Groups → Default Channel Group → Add channel*
+
+| Canal à créer | Condition |
+|---------------|-----------|
+| **Event / Physique** | `utm_medium` exactly matches `physique` OU `utm_source` exactly matches `event` |
+| **Webinar / Digital** | `utm_medium` exactly matches `digital` OU `utm_source` exactly matches `webinar` |
+
+Ces règles s'appliquent à toutes les nouvelles sessions dès leur activation (pas de rétroactivité sur les données passées).
         """)
 
 # =====================================================================
